@@ -12,9 +12,17 @@ interface VoicePacket {
   channelId?: string;
 }
 
+interface VoiceWaiter {
+  channelId: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+}
+
 export class PlayerManager {
   private readonly players = new Map<string, GuildPlayer>();
   private readonly voice = new Map<string, VoicePacket>();
+  private readonly voiceWaiters = new Map<string, VoiceWaiter>();
 
   constructor(private readonly client: Client, private readonly lavalink: LavalinkClient) {
     lavalink.on("event", (event) => {
@@ -28,6 +36,11 @@ export class PlayerManager {
       if (!payload.guildId || typeof payload.state?.position !== "number") return;
       const player = this.players.get(payload.guildId);
       player?.emit("position", payload.state.position);
+    });
+    lavalink.on("session", () => {
+      for (const guildId of this.voice.keys()) {
+        void this.flushVoice(guildId);
+      }
     });
   }
 
@@ -53,15 +66,16 @@ export class PlayerManager {
     if (packet.t === "VOICE_SERVER_UPDATE") {
       const guildId = String(packet.d.guild_id);
       const current = this.voice.get(guildId) ?? {};
-      current.token = String(packet.d.token);
-      current.endpoint = String(packet.d.endpoint);
+      current.token = this.optionalString(packet.d.token);
+      current.endpoint = this.optionalString(packet.d.endpoint);
       this.voice.set(guildId, current);
       await this.flushVoice(guildId);
     }
     if (packet.t === "VOICE_STATE_UPDATE" && packet.d.user_id === this.client.user?.id) {
       const guildId = String(packet.d.guild_id);
       const current = this.voice.get(guildId) ?? {};
-      current.sessionId = String(packet.d.session_id);
+      current.sessionId = this.optionalString(packet.d.session_id);
+      current.channelId = this.optionalString(packet.d.channel_id) ?? current.channelId;
       this.voice.set(guildId, current);
       await this.flushVoice(guildId);
     }
@@ -118,48 +132,89 @@ export class PlayerManager {
   }
 
   private async joinVoice(guildId: string, channelId: string) {
-  const current = this.voice.get(guildId) ?? {};
-  current.channelId = channelId;
-  this.voice.set(guildId, current);
-
-  const guild = await this.client.guilds.fetch(guildId);
-  guild.shard.send({
-    op: 4,
-    d: {
-      guild_id: guildId,
-      channel_id: channelId,
-      self_mute: false,
-      self_deaf: true
+    const current = this.voice.get(guildId);
+    if (current?.channelId === channelId && current.token && current.endpoint && current.sessionId) {
+      await this.flushVoice(guildId);
+      return;
     }
-  });
-}
+
+    this.clearVoiceWaiter(guildId);
+    this.voice.set(guildId, { channelId });
+
+    const guild = await this.client.guilds.fetch(guildId);
+    const ready = this.waitForVoice(guildId, channelId);
+    guild.shard.send({
+      op: 4,
+      d: {
+        guild_id: guildId,
+        channel_id: channelId,
+        self_mute: false,
+        self_deaf: true
+      }
+    });
+    await ready;
+  }
 
   private async leaveVoice(guildId: string) {
+    this.clearVoiceWaiter(guildId);
     const guild = await this.client.guilds.fetch(guildId);
     guild.shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_mute: false, self_deaf: true } });
     await this.lavalink.destroy(guildId);
+    this.voice.delete(guildId);
   }
 
   private async flushVoice(guildId: string) {
-  const packet = this.voice.get(guildId);
+    const packet = this.voice.get(guildId);
 
-  if (!packet?.token || !packet.endpoint || !packet.sessionId || !packet.channelId) return;
-  if (!this.lavalink.ready) return;
+    if (!packet?.token || !packet.endpoint || !packet.sessionId || !packet.channelId) return;
+    if (!this.lavalink.ready) return;
 
-  const cleanEndpoint = packet.endpoint.split(":")[0];
+    console.log("[VOICE UPDATE]", {
+      ...packet,
+      token: "[redacted]"
+    });
 
-  console.log("[VOICE CLEAN]", {
-    ...packet,
-    endpoint: cleanEndpoint
-  });
+    await this.lavalink.updateVoice(guildId, {
+      token: packet.token,
+      endpoint: packet.endpoint,
+      sessionId: packet.sessionId,
+      channelId: packet.channelId
+    });
 
-  await this.lavalink.updateVoice(guildId, {
-    token: packet.token,
-    endpoint: cleanEndpoint,
-    sessionId: packet.sessionId,
-    channelId: packet.channelId!
-  });
-}
+    this.resolveVoiceWaiter(guildId, packet.channelId);
+  }
+
+  private waitForVoice(guildId: string, channelId: string) {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.voiceWaiters.delete(guildId);
+        reject(new Error("Timed out waiting for Discord voice connection details."));
+      }, 10_000);
+
+      this.voiceWaiters.set(guildId, { channelId, resolve, reject, timeout });
+      void this.flushVoice(guildId);
+    });
+  }
+
+  private resolveVoiceWaiter(guildId: string, channelId: string) {
+    const waiter = this.voiceWaiters.get(guildId);
+    if (!waiter || waiter.channelId !== channelId) return;
+    clearTimeout(waiter.timeout);
+    this.voiceWaiters.delete(guildId);
+    waiter.resolve();
+  }
+
+  private clearVoiceWaiter(guildId: string) {
+    const waiter = this.voiceWaiters.get(guildId);
+    if (!waiter) return;
+    clearTimeout(waiter.timeout);
+    this.voiceWaiters.delete(guildId);
+    waiter.reject(new Error("Voice connection was replaced."));
+  }
+
+  private optionalString(value: unknown) {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  }
 
   private queueEmbed(state: PlayerState) {
     const current = state.current ? `Now: ${state.current.title} (${formatDuration(state.positionMs)} / ${formatDuration(state.current.durationMs)})` : "Nothing playing";
