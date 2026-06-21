@@ -1,0 +1,20 @@
+{
+  "name": "nikobox",
+  "private": true,
+  "version": "1.0.0",
+  "description": "NikoBox Discord music bot with Next.js dashboard and Lavalink.",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @nikobox/shared && npm run build -w @nikobox/bot && npm run build -w @nikobox/web",
+    "dev": "npm run dev -ws",
+    "lint": "npm run lint -ws --if-present",
+    "typecheck": "npm run typecheck -ws --if-present"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  }
+}

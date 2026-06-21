@@ -1,0 +1,57 @@
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: nikobox-lavalink
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      _JAVA_OPTIONS: ${JAVA_OPTS:-"-Xms128m -Xmx512m"}
+      SERVER_PORT: 2333
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_PASSWORD}
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - ./lavalink/plugins:/opt/Lavalink/plugins
+    ports:
+      - "127.0.0.1:${LAVALINK_PORT:-2333}:2333"
+    expose:
+      - "2333"
+
+  bot:
+    build:
+      context: .
+      dockerfile: apps/bot/Dockerfile
+    image: nikobox-bot:${NIKOBOX_TAG:-latest}
+    container_name: nikobox-bot
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      lavalink:
+        condition: service_started
+    ports:
+      - "${BOT_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:4000/health >/dev/null 2>&1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: nikobox-web:${NIKOBOX_TAG:-latest}
+    container_name: nikobox-web
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      bot:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/api/health >/dev/null 2>&1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
