@@ -10,6 +10,7 @@ export const commandBuilders = [
   new SlashCommandBuilder().setName("skip").setDescription("Skip the current track"),
   new SlashCommandBuilder().setName("stop").setDescription("Stop playback and clear the queue"),
   new SlashCommandBuilder().setName("queue").setDescription("Show the current queue"),
+  new SlashCommandBuilder().setName("ping").setDescription("Show bot latency"),
   new SlashCommandBuilder().setName("shuffle").setDescription("Toggle shuffle"),
   new SlashCommandBuilder()
     .setName("repeat")

@@ -37,8 +37,9 @@ export function startWebServer(client: Client, players: PlayerManager, port: num
     try {
       const { query, voiceChannelId } = req.body as { query: string; voiceChannelId?: string };
       if (!voiceChannelId) throw new Error("voiceChannelId is required for dashboard play.");
-      const result = await players.get(req.params.guildId).add(query, "Dashboard", voiceChannelId);
-      res.json(result);
+      const player = players.get(req.params.guildId);
+      await player.add(query, "Dashboard", voiceChannelId);
+      res.json(player.snapshot());
     } catch (error) {
       next(error);
     }

@@ -100,6 +100,12 @@ export class PlayerManager {
       if (interaction.commandName === "resume") await player.resume();
       if (interaction.commandName === "skip") await player.skip();
       if (interaction.commandName === "stop") await player.stop();
+      if (interaction.commandName === "ping") {
+        const commandLatency = Date.now() - interaction.createdTimestamp;
+        const gatewayLatency = Math.round(this.client.ws.ping);
+        await interaction.reply({ content: `Pong. Command ${commandLatency}ms, gateway ${gatewayLatency}ms.`, ephemeral: true });
+        return;
+      }
       if (interaction.commandName === "shuffle") {
         const next = !player.snapshot().shuffle;
         player.setShuffle(next);
