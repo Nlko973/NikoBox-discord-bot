@@ -5,6 +5,7 @@ export interface ResolvedInput {
   tracks: LavalinkTrack[];
   source: TrackSource;
   notice?: string;
+  isPlaylist?: boolean;
 }
 
 const spotifyRegex = /open\.spotify\.com\/(track|album|playlist)\/([A-Za-z0-9]+)/;
@@ -20,6 +21,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
     return {
       tracks: await lavalink.loadTracks(`ytsearch:${query}`),
       source: "spotify",
+      isPlaylist: false,
       notice: "Spotify metadata fallback used. Configure provider credentials for richer matching."
     };
   }
@@ -29,6 +31,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
     return {
       tracks: await lavalink.loadTracks(`ytsearch:${query}`),
       source: "yandex",
+      isPlaylist: false,
       notice: "Yandex Music metadata fallback used. Private API metadata can be added with YANDEX_MUSIC_TOKEN."
     };
   }
@@ -38,15 +41,16 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
     return {
       tracks: await lavalink.loadTracks(`ytsearch:${query}`),
       source: "vk",
+      isPlaylist: false,
       notice: "VK Music metadata fallback used. Private API metadata can be added with VK_ACCESS_TOKEN."
     };
   }
 
   if (urlRegex.test(trimmed)) {
-    return { tracks: await lavalink.loadTracks(trimmed), source: "youtube" };
+    return { tracks: await lavalink.loadTracks(trimmed), source: "youtube", isPlaylist: false };
   }
 
-  return { tracks: await lavalink.loadTracks(`ytsearch:${trimmed}`), source: "search" };
+  return { tracks: await lavalink.loadTracks(`ytsearch:${trimmed}`), source: "search", isPlaylist: false };
 }
 
 async function metadataFallbackQuery(url: string, service: string) {

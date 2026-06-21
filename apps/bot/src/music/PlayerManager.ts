@@ -9,6 +9,7 @@ interface VoicePacket {
   token?: string;
   endpoint?: string;
   sessionId?: string;
+  channelId?: string;
 }
 
 export class PlayerManager {
@@ -117,9 +118,21 @@ export class PlayerManager {
   }
 
   private async joinVoice(guildId: string, channelId: string) {
-    const guild = await this.client.guilds.fetch(guildId);
-    guild.shard.send({ op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: false, self_deaf: true } });
-  }
+  const current = this.voice.get(guildId) ?? {};
+  current.channelId = channelId;
+  this.voice.set(guildId, current);
+
+  const guild = await this.client.guilds.fetch(guildId);
+  guild.shard.send({
+    op: 4,
+    d: {
+      guild_id: guildId,
+      channel_id: channelId,
+      self_mute: false,
+      self_deaf: true
+    }
+  });
+}
 
   private async leaveVoice(guildId: string) {
     const guild = await this.client.guilds.fetch(guildId);
@@ -128,11 +141,25 @@ export class PlayerManager {
   }
 
   private async flushVoice(guildId: string) {
-    const packet = this.voice.get(guildId);
-    if (packet?.token && packet.endpoint && packet.sessionId && this.lavalink.ready) {
-      await this.lavalink.updateVoice(guildId, { token: packet.token, endpoint: packet.endpoint, sessionId: packet.sessionId });
-    }
-  }
+  const packet = this.voice.get(guildId);
+
+  if (!packet?.token || !packet.endpoint || !packet.sessionId || !packet.channelId) return;
+  if (!this.lavalink.ready) return;
+
+  const cleanEndpoint = packet.endpoint.split(":")[0];
+
+  console.log("[VOICE CLEAN]", {
+    ...packet,
+    endpoint: cleanEndpoint
+  });
+
+  await this.lavalink.updateVoice(guildId, {
+    token: packet.token,
+    endpoint: cleanEndpoint,
+    sessionId: packet.sessionId,
+    channelId: packet.channelId!
+  });
+}
 
   private queueEmbed(state: PlayerState) {
     const current = state.current ? `Now: ${state.current.title} (${formatDuration(state.positionMs)} / ${formatDuration(state.current.durationMs)})` : "Nothing playing";

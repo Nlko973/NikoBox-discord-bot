@@ -82,7 +82,7 @@ export class LavalinkClient extends EventEmitter {
     return [];
   }
 
-  async updateVoice(guildId: string, voice: { token: string; endpoint: string; sessionId: string }) {
+  async updateVoice(guildId: string, voice: { token: string; endpoint: string; sessionId: string; channelId: string; }) {
     await this.patchPlayer(guildId, { voice });
   }
 
@@ -116,13 +116,22 @@ export class LavalinkClient extends EventEmitter {
   }
 
   private async patchPlayer(guildId: string, body: unknown) {
-    if (!this.sessionId) throw new Error("Lavalink session is not ready");
-    await this.request(`/v4/sessions/${this.sessionId}/players/${guildId}`, {
+  if (!this.sessionId) throw new Error("Lavalink session is not ready");
+
+  console.log(
+    "[PATCH PLAYER]",
+    JSON.stringify(body, null, 2)
+  );
+
+  await this.request(
+    `/v4/sessions/${this.sessionId}/players/${guildId}`,
+    {
       method: "PATCH",
       body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" }
-    });
-  }
+    }
+  );
+}
 
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     const protocol = this.options.secure ? "https" : "http";
@@ -134,8 +143,16 @@ export class LavalinkClient extends EventEmitter {
       }
     });
     if (!response.ok) {
-      throw new Error(`Lavalink ${response.status}: ${await response.text()}`);
-    }
+  const text = await response.text();
+
+  console.error("[LAVALINK ERROR RESPONSE]", {
+    url: `${protocol}://${this.options.host}:${this.options.port}${path}`,
+    status: response.status,
+    body: text,
+  });
+
+  throw new Error(`Lavalink ${response.status}: ${text}`);
+}
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
