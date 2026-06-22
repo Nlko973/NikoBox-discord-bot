@@ -8,6 +8,7 @@ import { resolveInput } from "./sourceResolver.js";
 
 export class GuildPlayer extends EventEmitter {
   private state: PlayerState;
+  private advancingTrackId?: string;
 
   constructor(
     private readonly guildId: string,
@@ -76,20 +77,27 @@ export class GuildPlayer extends EventEmitter {
   }
 
   async handleTrackEnd(reason?: string, encodedTrack?: string) {
-    if (encodedTrack && this.state.current?.lavalinkTrack !== encodedTrack) return;
+    const current = this.state.current;
+    if (!current) return;
+    if (this.advancingTrackId === current.id) return;
+    if (encodedTrack && current.lavalinkTrack !== encodedTrack) return;
     if (reason === "REPLACED" || reason === "STOPPED" || reason === "CLEANUP") return;
 
-    const current = this.state.current;
-    if (current && reason === "LOAD_FAILED") {
-      this.state.playbackNotice ??= `Skipped "${current.title}": Lavalink could not load the track.`;
-    } else {
-      this.state.playbackNotice = undefined;
+    this.advancingTrackId = current.id;
+    try {
+      if (reason === "LOAD_FAILED") {
+        this.state.playbackNotice ??= `Skipped "${current.title}": Lavalink could not load the track.`;
+      } else {
+        this.state.playbackNotice = undefined;
+      }
+      if (reason !== "LOAD_FAILED") {
+        if (this.state.repeat === "track") this.state.queue.unshift(current);
+        if (this.state.repeat === "queue") this.state.queue.push(current);
+      }
+      await this.playNext();
+    } finally {
+      if (this.advancingTrackId === current.id) this.advancingTrackId = undefined;
     }
-    if (current && reason !== "LOAD_FAILED") {
-      if (this.state.repeat === "track") this.state.queue.unshift(current);
-      if (this.state.repeat === "queue") this.state.queue.push(current);
-    }
-    await this.playNext();
   }
 
   handleTrackException(message?: string, encodedTrack?: string) {
@@ -99,6 +107,14 @@ export class GuildPlayer extends EventEmitter {
       ? `Skipped "${current.title}": ${message || "Lavalink reported a playback error."}`
       : message || "Lavalink reported a playback error.";
     this.emitState();
+  }
+
+  handlePlaybackUpdate(positionMs: number) {
+    const current = this.state.current;
+    if (!current || current.isStream || this.state.paused) return;
+    if (this.advancingTrackId === current.id) return;
+    if (positionMs < Math.max(0, current.durationMs - 250)) return;
+    void this.handleTrackEnd("FINISHED", current.lavalinkTrack);
   }
 
   async pause() {
@@ -120,6 +136,7 @@ export class GuildPlayer extends EventEmitter {
   }
 
   async stop() {
+    this.advancingTrackId = undefined;
     this.state.current = undefined;
     this.state.queue = [];
     this.state.positionMs = 0;

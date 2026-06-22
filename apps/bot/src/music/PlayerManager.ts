@@ -57,6 +57,7 @@ export class PlayerManager {
       const payload = event as { guildId?: string; state?: { position?: number } };
       if (!payload.guildId || typeof payload.state?.position !== "number") return;
       const player = this.players.get(payload.guildId);
+      player?.handlePlaybackUpdate(payload.state.position);
       player?.emit("position", payload.state.position);
     });
     lavalink.on("session", () => {
