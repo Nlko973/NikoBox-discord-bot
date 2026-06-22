@@ -9,6 +9,7 @@ import { resolveInput } from "./sourceResolver.js";
 export class GuildPlayer extends EventEmitter {
   private state: PlayerState;
   private advancingTrackId?: string;
+  private trackEndTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly guildId: string,
@@ -32,7 +33,12 @@ export class GuildPlayer extends EventEmitter {
 
   snapshot(): PlayerState {
     const elapsed = !this.state.paused && this.state.current ? Date.now() - this.state.updatedAt : 0;
-    return { ...this.state, positionMs: this.state.positionMs + elapsed, queue: [...this.state.queue] };
+    const positionMs = this.state.positionMs + elapsed;
+    return {
+      ...this.state,
+      positionMs: this.state.current ? Math.min(this.state.current.durationMs, positionMs) : positionMs,
+      queue: [...this.state.queue]
+    };
   }
 
   async add(input: string, requestedBy: string, voiceChannelId: string, textChannel?: TextBasedChannel) {
@@ -56,12 +62,14 @@ export class GuildPlayer extends EventEmitter {
 
   async playTrack(track: Track, positionMs = 0) {
     if (!track.lavalinkTrack) throw new Error("Track has no Lavalink payload");
+    this.clearTrackEndTimer();
     this.state.current = track;
     this.state.positionMs = positionMs;
     this.state.updatedAt = Date.now();
     this.state.paused = false;
     await this.lavalink.play(this.guildId, track.lavalinkTrack, { volume: this.state.volume, positionMs });
     this.emitState();
+    this.scheduleTrackEnd();
   }
 
   async playNext() {
@@ -83,6 +91,7 @@ export class GuildPlayer extends EventEmitter {
     if (encodedTrack && current.lavalinkTrack !== encodedTrack) return;
     if (reason === "REPLACED" || reason === "STOPPED" || reason === "CLEANUP") return;
 
+    this.clearTrackEndTimer();
     this.advancingTrackId = current.id;
     try {
       if (reason === "LOAD_FAILED") {
@@ -109,16 +118,9 @@ export class GuildPlayer extends EventEmitter {
     this.emitState();
   }
 
-  handlePlaybackUpdate(positionMs: number) {
-    const current = this.state.current;
-    if (!current || current.isStream || this.state.paused) return;
-    if (this.advancingTrackId === current.id) return;
-    if (positionMs < Math.max(0, current.durationMs - 250)) return;
-    void this.handleTrackEnd("FINISHED", current.lavalinkTrack);
-  }
-
   async pause() {
     this.freezePosition();
+    this.clearTrackEndTimer();
     this.state.paused = true;
     await this.lavalink.pause(this.guildId, true);
     this.emitState();
@@ -129,6 +131,7 @@ export class GuildPlayer extends EventEmitter {
     this.state.updatedAt = Date.now();
     await this.lavalink.pause(this.guildId, false);
     this.emitState();
+    this.scheduleTrackEnd();
   }
 
   async skip() {
@@ -136,6 +139,7 @@ export class GuildPlayer extends EventEmitter {
   }
 
   async stop() {
+    this.clearTrackEndTimer();
     this.advancingTrackId = undefined;
     this.state.current = undefined;
     this.state.queue = [];
@@ -164,6 +168,7 @@ export class GuildPlayer extends EventEmitter {
     this.state.updatedAt = Date.now();
     await this.lavalink.seek(this.guildId, position);
     this.emitState();
+    this.scheduleTrackEnd();
   }
 
   setRepeat(mode: RepeatMode) {
@@ -215,6 +220,29 @@ export class GuildPlayer extends EventEmitter {
 
   private freezePosition() {
     this.state = this.snapshot();
+  }
+
+  private scheduleTrackEnd() {
+    this.clearTrackEndTimer();
+    const current = this.state.current;
+    if (!current || current.isStream || this.state.paused) return;
+
+    const remaining = current.durationMs - this.snapshot().positionMs;
+    if (remaining <= 0) {
+      void this.handleTrackEnd("FINISHED", current.lavalinkTrack);
+      return;
+    }
+
+    this.trackEndTimer = setTimeout(() => {
+      this.trackEndTimer = undefined;
+      void this.handleTrackEnd("FINISHED", current.lavalinkTrack);
+    }, remaining);
+  }
+
+  private clearTrackEndTimer() {
+    if (!this.trackEndTimer) return;
+    clearTimeout(this.trackEndTimer);
+    this.trackEndTimer = undefined;
   }
 
   private emitState() {
