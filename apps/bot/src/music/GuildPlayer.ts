@@ -81,7 +81,7 @@ export class GuildPlayer extends EventEmitter {
 
     const current = this.state.current;
     if (current && reason === "LOAD_FAILED") {
-      this.state.playbackNotice = `Skipped "${current.title}": Lavalink could not load the track.`;
+      this.state.playbackNotice ??= `Skipped "${current.title}": Lavalink could not load the track.`;
     } else {
       this.state.playbackNotice = undefined;
     }
@@ -92,13 +92,13 @@ export class GuildPlayer extends EventEmitter {
     await this.playNext();
   }
 
-  async handleTrackException(message?: string, encodedTrack?: string) {
+  handleTrackException(message?: string, encodedTrack?: string) {
     if (encodedTrack && this.state.current?.lavalinkTrack !== encodedTrack) return;
     const current = this.state.current;
     this.state.playbackNotice = current
       ? `Skipped "${current.title}": ${message || "Lavalink reported a playback error."}`
       : message || "Lavalink reported a playback error.";
-    await this.playNext();
+    this.emitState();
   }
 
   async pause() {
