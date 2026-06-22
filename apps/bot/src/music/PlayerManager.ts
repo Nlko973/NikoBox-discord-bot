@@ -35,6 +35,11 @@ export class PlayerManager {
       };
       if (!payload.guildId) return;
       if (payload.type === "TrackEndEvent") {
+        console.log("[LAVALINK TRACK END]", {
+          guildId: payload.guildId,
+          reason: payload.reason,
+          title: payload.track?.info?.title
+        });
         void this.get(payload.guildId).handleTrackEnd(payload.reason, payload.track?.encoded);
       }
       if (payload.type === "TrackExceptionEvent" || payload.type === "TrackStuckEvent") {
