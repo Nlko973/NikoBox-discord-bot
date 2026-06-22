@@ -46,12 +46,15 @@ plugins:
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
     clients:
+      - TV
       - TVHTML5_SIMPLY
       - WEB
       - MWEB
       - WEBEMBEDDED
       - ANDROID_VR
       - MUSIC
+    oauth:
+      enabled: true
 
 metrics:
   prometheus:
@@ -66,3 +69,5 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+    dev.lavalink.youtube.plugin.YoutubePluginLoader: DEBUG
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
