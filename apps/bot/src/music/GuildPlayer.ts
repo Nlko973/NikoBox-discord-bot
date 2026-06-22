@@ -75,14 +75,29 @@ export class GuildPlayer extends EventEmitter {
     await this.playTrack(next);
   }
 
-  async handleTrackEnd(reason?: string) {
+  async handleTrackEnd(reason?: string, encodedTrack?: string) {
+    if (encodedTrack && this.state.current?.lavalinkTrack !== encodedTrack) return;
     if (reason === "REPLACED" || reason === "STOPPED" || reason === "CLEANUP") return;
 
     const current = this.state.current;
-    if (current) {
+    if (current && reason === "LOAD_FAILED") {
+      this.state.playbackNotice = `Skipped "${current.title}": Lavalink could not load the track.`;
+    } else {
+      this.state.playbackNotice = undefined;
+    }
+    if (current && reason !== "LOAD_FAILED") {
       if (this.state.repeat === "track") this.state.queue.unshift(current);
       if (this.state.repeat === "queue") this.state.queue.push(current);
     }
+    await this.playNext();
+  }
+
+  async handleTrackException(message?: string, encodedTrack?: string) {
+    if (encodedTrack && this.state.current?.lavalinkTrack !== encodedTrack) return;
+    const current = this.state.current;
+    this.state.playbackNotice = current
+      ? `Skipped "${current.title}": ${message || "Lavalink reported a playback error."}`
+      : message || "Lavalink reported a playback error.";
     await this.playNext();
   }
 
@@ -101,7 +116,7 @@ export class GuildPlayer extends EventEmitter {
   }
 
   async skip() {
-    await this.handleTrackEnd("SKIPPED");
+    await this.handleTrackEnd("SKIPPED", this.state.current?.lavalinkTrack);
   }
 
   async stop() {

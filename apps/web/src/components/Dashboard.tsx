@@ -184,6 +184,7 @@ export function Dashboard({ wsUrl }: { wsUrl: string }) {
       </form>
 
       {error && <div className="notice">{error}</div>}
+      {view?.playbackNotice && <div className="notice">{view.playbackNotice}</div>}
 
       {view && (
         <section className="player">

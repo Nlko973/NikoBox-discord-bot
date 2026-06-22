@@ -20,6 +20,7 @@ export interface PlayerState {
   voiceChannelId?: string;
   textChannelId?: string;
   current?: Track;
+  playbackNotice?: string;
   queue: Track[];
   paused: boolean;
   volume: number;

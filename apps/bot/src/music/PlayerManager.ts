@@ -26,9 +26,26 @@ export class PlayerManager {
 
   constructor(private readonly client: Client, private readonly lavalink: LavalinkClient) {
     lavalink.on("event", (event) => {
-      const payload = event as { type?: string; guildId?: string; reason?: string };
-      if (payload.type === "TrackEndEvent" && payload.guildId) {
-        void this.get(payload.guildId).handleTrackEnd(payload.reason);
+      const payload = event as {
+        type?: string;
+        guildId?: string;
+        reason?: string;
+        track?: { encoded?: string; info?: { title?: string } };
+        exception?: { message?: string; severity?: string; cause?: string };
+      };
+      if (!payload.guildId) return;
+      if (payload.type === "TrackEndEvent") {
+        void this.get(payload.guildId).handleTrackEnd(payload.reason, payload.track?.encoded);
+      }
+      if (payload.type === "TrackExceptionEvent" || payload.type === "TrackStuckEvent") {
+        const message = payload.exception?.message ?? payload.exception?.cause ?? payload.reason;
+        console.warn("[LAVALINK TRACK ERROR]", {
+          guildId: payload.guildId,
+          type: payload.type,
+          title: payload.track?.info?.title,
+          message
+        });
+        void this.get(payload.guildId).handleTrackException(message, payload.track?.encoded);
       }
     });
     lavalink.on("playerUpdate", (event) => {
