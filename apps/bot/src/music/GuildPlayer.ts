@@ -41,13 +41,11 @@ export class GuildPlayer extends EventEmitter {
     this.state.connected = true;
 
     const resolved = await resolveInput(this.lavalink, input);
-    let tracks = resolved.tracks.map((track) =>
-  this.toTrack(track, requestedBy, resolved.source)
-);
+    let tracks = resolved.tracks.map((track) => this.toTrack(track, requestedBy, resolved.source));
 
-if (resolved.source === "youtube" || resolved.tracks.length > 1 && !resolved.isPlaylist) {
-  tracks = tracks.slice(0, 1);
-}
+    if ((resolved.source === "youtube" && !resolved.isPlaylist) || (resolved.tracks.length > 1 && !resolved.isPlaylist)) {
+      tracks = tracks.slice(0, 1);
+    }
     if (tracks.length === 0) throw new Error("No tracks found.");
     this.state.queue.push(...tracks);
     this.emitState();
@@ -78,8 +76,10 @@ if (resolved.source === "youtube" || resolved.tracks.length > 1 && !resolved.isP
   }
 
   async handleTrackEnd(reason?: string) {
+    if (reason === "REPLACED" || reason === "STOPPED" || reason === "CLEANUP") return;
+
     const current = this.state.current;
-    if (current && reason !== "REPLACED") {
+    if (current) {
       if (this.state.repeat === "track") this.state.queue.unshift(current);
       if (this.state.repeat === "queue") this.state.queue.push(current);
     }

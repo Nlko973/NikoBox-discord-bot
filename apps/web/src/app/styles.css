@@ -55,9 +55,15 @@ p, small { color: #aeb6b0; }
   height: 46px;
   flex: 0 0 auto;
   border-radius: 8px;
-  color: #111315;
-  background: #e8c16a;
-  font-weight: 800;
+  overflow: hidden;
+  background: #252b2e;
+  border: 1px solid #3a4245;
+}
+
+.brandMark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .pill {
