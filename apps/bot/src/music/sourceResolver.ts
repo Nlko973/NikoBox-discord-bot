@@ -22,7 +22,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
   if (spotifyRegex.test(trimmed)) {
     const query = await metadataFallbackQuery(trimmed, "Spotify");
     return {
-      tracks: await lavalink.loadTracks(`ytsearch:${query}`),
+      tracks: await loadTextSearch(lavalink, query),
       source: "spotify",
       isPlaylist: false,
       notice: "Spotify metadata fallback used. Configure provider credentials for richer matching."
@@ -42,7 +42,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
 
     const query = await metadataFallbackQuery(trimmed, "Yandex Music");
     return {
-      tracks: await lavalink.loadTracks(`ytsearch:${query}`),
+      tracks: await loadTextSearch(lavalink, query),
       source: "yandex",
       isPlaylist: false,
       notice: "Yandex Music metadata fallback used. Private API metadata can be added with YANDEX_MUSIC_TOKEN."
@@ -52,7 +52,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
   if (vkRegex.test(trimmed)) {
     const query = await metadataFallbackQuery(trimmed, "VK Music");
     return {
-      tracks: await lavalink.loadTracks(`ytsearch:${query}`),
+      tracks: await loadTextSearch(lavalink, query),
       source: "vk",
       isPlaylist: false,
       notice: "VK Music metadata fallback used. Private API metadata can be added with VK_ACCESS_TOKEN."
@@ -63,7 +63,13 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
     return { tracks: await lavalink.loadTracks(trimmed), source: "youtube", isPlaylist: youtubePlaylistRegex.test(trimmed) };
   }
 
-  return { tracks: await lavalink.loadTracks(`ytsearch:${trimmed}`), source: "search", isPlaylist: false };
+  return { tracks: await loadTextSearch(lavalink, trimmed), source: "search", isPlaylist: false };
+}
+
+async function loadTextSearch(lavalink: LavalinkClient, query: string) {
+  const soundCloudTracks = await lavalink.loadTracks(`scsearch:${query}`).catch(() => []);
+  if (soundCloudTracks.length > 0) return soundCloudTracks;
+  return lavalink.loadTracks(`ytsearch:${query}`);
 }
 
 async function metadataFallbackQuery(url: string, service: string) {
@@ -118,7 +124,7 @@ async function loadSearchQueries(lavalink: LavalinkClient, queries: string[]) {
 
   for (let index = 0; index < queries.length; index += concurrency) {
     const chunk = queries.slice(index, index + concurrency);
-    const results = await Promise.all(chunk.map((query) => lavalink.loadTracks(`ytsearch:${query}`).catch(() => [])));
+    const results = await Promise.all(chunk.map((query) => loadTextSearch(lavalink, query).catch(() => [])));
     for (const result of results) {
       const track = result[0];
       if (track) tracks.push(track);
