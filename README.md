@@ -7,7 +7,7 @@ Production-ready Discord music bot with a Next.js dashboard and Lavalink audio s
 - Discord.js v14 + TypeScript slash commands: `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`, `/shuffle`, `/repeat`, `/volume`, `/seek`, `/nowplaying`
 - Lavalink v4 streaming, no local audio storage
 - YouTube videos/playlists and text search
-- Spotify, Yandex Music, and VK Music URL handling through metadata-style YouTube fallback
+- Spotify, Yandex Music, and VK Music URL handling through metadata-style search fallback for tracks, albums, and playlists
 - Multi-guild queues, repeat, shuffle, volume, absolute seek, forward/backward seek
 - Web dashboard with per-guild control, live WebSocket updates, queue remove/reorder/clear, progress seeking
 - Docker Compose deployment with restart policies
@@ -58,7 +58,7 @@ YANDEX_MUSIC_TOKEN=
 VK_ACCESS_TOKEN=
 ```
 
-The current implementation keeps provider handling lightweight for low-resource VPS hosts: Spotify/Yandex/VK links are converted to a readable search query and resolved through YouTube via Lavalink. Add provider API enrichment in `apps/bot/src/music/sourceResolver.ts` when credentials are available.
+The current implementation keeps provider handling lightweight for low-resource VPS hosts: Spotify/Yandex/VK links are resolved through provider metadata into per-track search queries and then queued through YouTube/SoundCloud via Lavalink. Add provider API credentials in `apps/bot/src/music/sourceResolver.ts` for richer matching when available.
 
 ## Services
 
