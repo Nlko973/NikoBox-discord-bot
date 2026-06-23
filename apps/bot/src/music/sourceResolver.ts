@@ -47,32 +47,40 @@ async function resolveSpotifyInput(
   type: "track" | "album" | "playlist",
   id: string
 ): Promise<ResolvedInput> {
+
   if (type === "track") {
     const query = await spotifyTrackQuery(url, id);
+
     return {
       tracks: await loadSearchQueries(lavalink, [query], loadMetadataSearch),
       source: "spotify",
       isPlaylist: false,
-      notice: "Spotify metadata fallback used. Configure provider credentials for richer matching."
+      notice: "Spotify track resolved via metadata fallback"
     };
   }
 
   const queries = await spotifyCollectionQueries(type, id);
+
   if (queries.length > 0) {
     return {
-      tracks: await loadSearchQueries(lavalink, queries.slice(0, playlistLimit), loadMetadataSearch),
+      tracks: await loadSearchQueries(
+        lavalink,
+        queries,
+        loadMetadataSearch
+      ),
       source: "spotify",
       isPlaylist: true,
-      notice: `Spotify ${type} metadata fallback used. Added up to ${playlistLimit} tracks.`
+      notice: `Spotify ${type} resolved (${queries.length} items)`
     };
   }
 
-  const query = await metadataFallbackQuery(url, "Spotify");
+  const fallback = await metadataFallbackQuery(url, "Spotify");
+
   return {
-    tracks: await loadSearchQueries(lavalink, [query], loadMetadataSearch),
+    tracks: await loadSearchQueries(lavalink, [fallback], loadMetadataSearch),
     source: "spotify",
     isPlaylist: false,
-    notice: "Spotify metadata fallback used. Configure provider credentials for richer matching."
+    notice: "Spotify fallback used"
   };
 }
 
@@ -244,11 +252,15 @@ function parseVkUrl(url: string) {
 async function spotifyTrackQuery(url: string, id: string) {
   try {
     const track = await spotifyTrackMetadata(id);
-    if (track) return trackQuery(track.title, track.artists);
-  } catch {
-    // Fall back to page metadata below.
-  }
-  return metadataFallbackQuery(url, "Spotify");
+
+    if (track?.title) {
+      return trackQuery(track.title, track.artists ?? []);
+    }
+  } catch {}
+
+  const fallback = await metadataFallbackQuery(url, "Spotify");
+
+  return fallback || `${id} spotify track`;
 }
 
 async function spotifyCollectionQueries(type: "album" | "playlist", id: string) {
@@ -372,16 +384,27 @@ async function vkTrackQuery(url: string, ownerId?: string, audioId?: string) {
 async function vkCollectionQueries(ownerId?: string, albumId?: string) {
   if (!ownerId || !albumId) return [];
 
-  const data = await vkApiRequest<VkGetResponse<VkAudio[] | { items?: VkAudio[] }>>("audio.get", {
-    owner_id: ownerId,
-    album_id: albumId,
-    count: playlistLimit,
-    offset: 0
-  });
+  const data = await vkApiRequest<VkGetResponse<VkAudio[] | { items?: VkAudio[] }>>(
+    "audio.get",
+    {
+      owner_id: ownerId,
+      album_id: albumId,
+      count: playlistLimit,
+      offset: 0
+    }
+  );
+
   if (!data?.response) return [];
 
-  const items = Array.isArray(data.response) ? data.response : data.response.items ?? [];
-  return uniqueQueries(items.map(vkTrackItemQuery).filter((query): query is string => Boolean(query)));
+  const items = Array.isArray(data.response)
+    ? data.response
+    : data.response.items ?? [];
+
+  const mapped = items
+    .map(vkTrackItemQuery)
+    .filter((q): q is string => Boolean(q));
+
+  return uniqueQueries(mapped);
 }
 
 async function vkAudioById(ownerId: string, audioId: string) {
@@ -406,24 +429,43 @@ async function vkApiRequest<T>(method: string, params: Record<string, string | n
 
 function extractYandexQueries(data: YandexResponse | undefined) {
   if (!data) return [];
-  const tracks = data.playlist?.tracks ?? data.album?.tracks ?? data.tracks ?? (data.track ? [data.track] : []);
-  return tracks.map(yandexTrackItemQuery).filter((query): query is string => Boolean(query));
+
+  const tracks =
+    data.playlist?.tracks ??
+    data.album?.tracks ??
+    data.tracks ??
+    (data.track ? [data.track] : []);
+
+  return tracks
+    .map(yandexTrackItemQuery)
+    .filter((q): q is string => Boolean(q));
 }
 
 function yandexTrackItemQuery(item: YandexTrackItem) {
   const track = item.track ?? item;
+
   const title = track.title?.trim();
   if (!title) return undefined;
-  const artists = track.artists?.map((artist) => artist.name?.trim()).filter(Boolean) ?? [];
+
+  const artists =
+    track.artists?.map((a: { name?: string }) => a.name?.trim()).filter(Boolean) ?? [];
+
   return trackQuery(title, artists);
 }
 
 function vkTrackItemQuery(item: VkAudio) {
   const title = item.title?.trim();
   if (!title) return undefined;
-  const artists =
-    item.artists?.map((artist) => artist.name?.trim()).filter(Boolean) ??
-    [item.artist?.trim(), item.performer?.trim()].filter((value): value is string => Boolean(value));
+
+  const artistsRaw =
+    item.artist?.trim()
+      ? [item.artist.trim()]
+      : item.performer?.trim()
+        ? [item.performer.trim()]
+        : item.artists?.map(a => a.name?.trim()).filter(Boolean) ?? [];
+
+  const artists = artistsRaw.filter(Boolean) as string[];
+
   return trackQuery(title, artists);
 }
 
@@ -438,11 +480,20 @@ async function loadSearchQueries(
 
   for (let index = 0; index < unique.length; index += concurrency) {
     const chunk = unique.slice(index, index + concurrency);
-    const results = await Promise.all(chunk.map((query) => loader(lavalink, query).catch(() => [])));
+
+    const results = await Promise.all(
+      chunk.map(q => loader(lavalink, q).catch(() => []))
+    );
+
     for (const result of results) {
-      const track = result[0];
-      if (track) tracks.push(track);
-      if (tracks.length >= playlistLimit) return tracks;
+      // 🔥 ВАЖНО: забираем ВСЕ треки, а не только [0]
+      for (const track of result) {
+        if (track) tracks.push(track);
+
+        if (tracks.length >= playlistLimit) {
+          return tracks;
+        }
+      }
     }
   }
 
