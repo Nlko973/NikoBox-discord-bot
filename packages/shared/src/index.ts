@@ -1,6 +1,6 @@
 export type RepeatMode = "off" | "track" | "queue";
 
-export type TrackSource = "youtube" | "spotify" | "yandex" | "vk" | "search";
+export type TrackSource = "youtube" | "spotify" | "search";
 
 export interface Track {
   id: string;

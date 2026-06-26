@@ -10,8 +10,6 @@ export interface Env {
   lavalinkSecure: boolean;
   spotifyClientId?: string;
   spotifyClientSecret?: string;
-  yandexMusicToken?: string;
-  vkAccessToken?: string;
 }
 
 const required = (name: string) => {
@@ -31,7 +29,5 @@ export const env: Env = {
   lavalinkPassword: required("LAVALINK_PASSWORD"),
   lavalinkSecure: process.env.LAVALINK_SECURE === "true",
   spotifyClientId: process.env.SPOTIFY_CLIENT_ID,
-  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-  yandexMusicToken: process.env.YANDEX_MUSIC_TOKEN,
-  vkAccessToken: process.env.VK_ACCESS_TOKEN
+  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET
 };

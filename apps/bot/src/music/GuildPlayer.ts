@@ -50,7 +50,9 @@ export class GuildPlayer extends EventEmitter {
     const resolved = await resolveInput(this.lavalink, input);
     let tracks = resolved.tracks.map((track) => this.toTrack(track, requestedBy, resolved.source));
 
-    if ((resolved.source === "youtube" && !resolved.isPlaylist) || (resolved.tracks.length > 1 && !resolved.isPlaylist)) {
+    // Keep the full queue for playlists/albums (isPlaylist). For single-item
+    // requests a search may return several matches; collapse to the first one.
+    if (!resolved.isPlaylist && tracks.length > 1) {
       tracks = tracks.slice(0, 1);
     }
     if (tracks.length === 0) throw new Error("No tracks found.");
