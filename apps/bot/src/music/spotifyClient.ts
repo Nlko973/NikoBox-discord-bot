@@ -58,7 +58,7 @@ export class SpotifyClient {
 
       if (type === "album") {
         const queries = await this.collectAll(
-          `${API_BASE}/albums/${id}/tracks?limit=50&market=from_token`,
+          `${API_BASE}/albums/${id}/tracks?limit=50`,
           token,
           (page) => (page.items as SpotifyApiAlbumTrack[]).map(toQuery)
         );
@@ -67,7 +67,7 @@ export class SpotifyClient {
 
       // playlist
       const queries = await this.collectAll(
-        `${API_BASE}/playlists/${id}/tracks?limit=100&additional_types=track&market=from_token`,
+        `${API_BASE}/playlists/${id}/tracks?limit=100&additional_types=track`,
         token,
         (page) =>
           (page.items as Array<{ track?: SpotifyApiTrack }>)
@@ -75,7 +75,8 @@ export class SpotifyClient {
             .filter((value): value is SpotifyTrackQuery => Boolean(value))
       );
       return queries;
-    } catch {
+    } catch (error) {
+      console.warn("[SPOTIFY API] resolveQueries failed:", error instanceof Error ? error.message : error);
       return undefined;
     }
   }
@@ -102,10 +103,16 @@ export class SpotifyClient {
       },
       body
     });
-    if (!response?.ok) return undefined;
+    if (!response?.ok) {
+      console.warn(`[SPOTIFY API] token request failed: HTTP ${response?.status ?? "no-response"}`);
+      return undefined;
+    }
 
     const data = (await response.json()) as { access_token?: string; expires_in?: number };
-    if (!data.access_token) return undefined;
+    if (!data.access_token) {
+      console.warn("[SPOTIFY API] token response had no access_token");
+      return undefined;
+    }
 
     const expiresIn = Number(data.expires_in ?? 3600);
     this.token = { value: data.access_token, expiresAt: Date.now() + expiresIn * 1000 };

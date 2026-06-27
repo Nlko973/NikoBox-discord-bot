@@ -47,9 +47,18 @@ async function resolveSpotifyInput(
     ? apiQueries.map(toSearchString)
     : await spotifyEmbedQueries(type, id);
 
+  console.log("[SPOTIFY RESOLVE]", {
+    type,
+    id,
+    source: apiQueries ? "api" : "embed",
+    queryCount: queries.length
+  });
+
   if (queries.length === 1 && type === "track") {
+    const tracks = await loadSearchQueries(lavalink, queries, loadMetadataSearch);
+    console.log("[SPOTIFY RESOLVE] single track result:", tracks.length, "track(s)");
     return {
-      tracks: await loadSearchQueries(lavalink, queries, loadMetadataSearch),
+      tracks,
       source: "spotify",
       isPlaylist: false,
       notice: apiQueries ? "Spotify track resolved via API" : "Spotify track resolved via embed"
@@ -58,12 +67,14 @@ async function resolveSpotifyInput(
 
   if (queries.length > 0) {
     const via = apiQueries ? "API" : "embed";
+    const tracks = await loadSearchQueries(
+      lavalink,
+      queries.slice(0, playlistLimit),
+      loadMetadataSearch
+    );
+    console.log("[SPOTIFY RESOLVE] playlist result:", tracks.length, "track(s) from", queries.length, "queries");
     return {
-      tracks: await loadSearchQueries(
-        lavalink,
-        queries.slice(0, playlistLimit),
-        loadMetadataSearch
-      ),
+      tracks,
       source: "spotify",
       isPlaylist: true,
       notice: `Spotify ${type} resolved (${queries.length} items via ${via})`
@@ -189,14 +200,30 @@ async function loadSearchQueries(
   loader: (lavalink: LavalinkClient, query: string) => Promise<LavalinkTrack[]>
 ) {
   const tracks: LavalinkTrack[] = [];
-  const concurrency = 5;
+  // Keep concurrency low: each query is a separate YouTube/SoundCloud search
+  // through Lavalink. Spikes of parallel searches get rate-limited (empty
+  // results / 429) and cause whole playlists to come back empty.
+  const concurrency = 2;
   const unique = uniqueQueries(queries);
+  let misses = 0;
 
   for (let index = 0; index < unique.length; index += concurrency) {
     const chunk = unique.slice(index, index + concurrency);
 
     const results = await Promise.all(
-      chunk.map(q => loader(lavalink, q).catch(() => []))
+      chunk.map(q =>
+        loader(lavalink, q).then((res) => {
+          if (res.length === 0) {
+            misses++;
+            console.warn("[SPOTIFY RESOLVE] no results for query:", q);
+          }
+          return res;
+        }).catch((err) => {
+          misses++;
+          console.warn("[SPOTIFY RESOLVE] search failed for query:", q, err instanceof Error ? err.message : err);
+          return [];
+        })
+      )
     );
 
     for (const result of results) {
@@ -209,6 +236,10 @@ async function loadSearchQueries(
         }
       }
     }
+  }
+
+  if (misses > 0) {
+    console.warn(`[SPOTIFY RESOLVE] ${misses}/${unique.length} queries returned no results (likely YouTube rate-limiting)`);
   }
 
   return tracks;
