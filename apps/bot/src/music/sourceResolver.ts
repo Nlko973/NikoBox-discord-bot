@@ -1,4 +1,6 @@
+import { env } from "../env.js";
 import type { LavalinkClient, LavalinkTrack } from "../lavalink/LavalinkClient.js";
+import { SpotifyClient, type SpotifyTrackQuery } from "./spotifyClient.js";
 import type { TrackSource } from "@nikobox/shared";
 
 export interface ResolvedInput {
@@ -7,6 +9,9 @@ export interface ResolvedInput {
   notice?: string;
   isPlaylist?: boolean;
 }
+
+// A single shared client caches the access token between resolves.
+const spotifyClient = new SpotifyClient(env.spotifyClientId, env.spotifyClientSecret);
 
 const spotifyUrlRegex = /open\.spotify\.com\/(track|album|playlist)\/([A-Za-z0-9]+)/i;
 const urlRegex = /^https?:\/\//i;
@@ -35,18 +40,24 @@ async function resolveSpotifyInput(
   id: string
 ): Promise<ResolvedInput> {
 
-  const queries = await spotifyEmbedQueries(type, id);
+  // Prefer the official Web API when credentials are configured — it is
+  // reliable, paginates full playlists, and is not blocked like HTML scraping.
+  const apiQueries = await spotifyClient.resolveQueries(type, id);
+  const queries = apiQueries
+    ? apiQueries.map(toSearchString)
+    : await spotifyEmbedQueries(type, id);
 
   if (queries.length === 1 && type === "track") {
     return {
       tracks: await loadSearchQueries(lavalink, queries, loadMetadataSearch),
       source: "spotify",
       isPlaylist: false,
-      notice: "Spotify track resolved via embed"
+      notice: apiQueries ? "Spotify track resolved via API" : "Spotify track resolved via embed"
     };
   }
 
   if (queries.length > 0) {
+    const via = apiQueries ? "API" : "embed";
     return {
       tracks: await loadSearchQueries(
         lavalink,
@@ -55,7 +66,7 @@ async function resolveSpotifyInput(
       ),
       source: "spotify",
       isPlaylist: true,
-      notice: `Spotify ${type} resolved (${queries.length} items via embed)`
+      notice: `Spotify ${type} resolved (${queries.length} items via ${via})`
     };
   }
 
@@ -68,6 +79,15 @@ async function resolveSpotifyInput(
     isPlaylist: false,
     notice: "Spotify fallback used"
   };
+}
+
+/** Turn a structured track query into a "artist title" search string. */
+function toSearchString(query: SpotifyTrackQuery): string {
+  return [query.artists.join(", "), query.title]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 }
 
 async function loadTextSearch(lavalink: LavalinkClient, query: string) {
