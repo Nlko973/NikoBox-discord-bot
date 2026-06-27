@@ -241,13 +241,13 @@ async function loadSearchQueries(
     );
 
     for (const result of results) {
-      // 🔥 ВАЖНО: забираем ВСЕ треки, а не только [0]
-      for (const track of result) {
-        if (track) tracks.push(track);
+      // Take only the best match per query: one Spotify track = one queue entry.
+      // Grabbing every search result (~10 per query) multiplied the playlist by
+      // ~10x with covers/remixes/alternate versions (e.g. 100 -> ~1000).
+      if (result[0]) tracks.push(result[0]);
 
-        if (tracks.length >= playlistLimit) {
-          return tracks;
-        }
+      if (tracks.length >= playlistLimit) {
+        return tracks;
       }
     }
   }
