@@ -13,13 +13,16 @@ export interface ResolvedInput {
 // A single shared client caches the access token between resolves.
 const spotifyClient = new SpotifyClient(env.spotifyClientId, env.spotifyClientSecret);
 
-const spotifyUrlRegex = /open\.spotify\.com\/(track|album|playlist)\/([A-Za-z0-9]+)/i;
+// Accept both legacy links (open.spotify.com/playlist/<id>) and the locale-prefixed
+// share links Spotify now emits (open.spotify.com/intl-ru/playlist/<id>, intl-fr, …).
+const spotifyUrlRegex = /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|album|playlist)\/([A-Za-z0-9]+)/i;
 const urlRegex = /^https?:\/\//i;
 const youtubePlaylistRegex = /(?:youtube\.com|youtu\.be)\/.*[?&]list=/i;
 const playlistLimit = 1000;
 
 export async function resolveInput(lavalink: LavalinkClient, input: string): Promise<ResolvedInput> {
   const trimmed = input.trim();
+  console.log("[RESOLVE INPUT]", trimmed);
 
   const spotify = parseSpotifyUrl(trimmed);
   if (spotify) {
@@ -27,6 +30,12 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
   }
 
   if (urlRegex.test(trimmed)) {
+    // Surface why a spotify-ish URL didn't match the spotify regex, so URL
+    // format changes don't silently fall through to Lavalink (which can't play
+    // spotify links and would just return "No tracks found.").
+    if (/spotify\.com/i.test(trimmed)) {
+      console.warn("[RESOLVE INPUT] spotify.com URL did not match the spotify regex:", trimmed);
+    }
     return { tracks: await lavalink.loadTracks(trimmed), source: "youtube", isPlaylist: youtubePlaylistRegex.test(trimmed) };
   }
 
