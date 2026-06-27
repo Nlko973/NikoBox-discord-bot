@@ -1,6 +1,6 @@
 import { env } from "../env.js";
 import type { LavalinkClient, LavalinkTrack } from "../lavalink/LavalinkClient.js";
-import { SpotifyClient, type SpotifyTrackQuery } from "./spotifyClient.js";
+import { SpotifyClient, type SpotifyTrackQuery, type SpotifyType } from "./spotifyClient.js";
 import type { TrackSource } from "@nikobox/shared";
 
 export interface ResolvedInput {
@@ -15,7 +15,9 @@ const spotifyClient = new SpotifyClient(env.spotifyClientId, env.spotifyClientSe
 
 // Accept both legacy links (open.spotify.com/playlist/<id>) and the locale-prefixed
 // share links Spotify now emits (open.spotify.com/intl-ru/playlist/<id>, intl-fr, …).
-const spotifyUrlRegex = /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|album|playlist)\/([A-Za-z0-9]+)/i;
+// Supported types: track, artist, album, playlist. Anything else (e.g. /user/) is
+// not playable and is rejected explicitly.
+const spotifyUrlRegex = /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|artist|album|playlist)\/([A-Za-z0-9]+)/i;
 const urlRegex = /^https?:\/\//i;
 const youtubePlaylistRegex = /(?:youtube\.com|youtu\.be)\/.*[?&]list=/i;
 const playlistLimit = 1000;
@@ -30,11 +32,13 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
   }
 
   if (urlRegex.test(trimmed)) {
-    // Surface why a spotify-ish URL didn't match the spotify regex, so URL
-    // format changes don't silently fall through to Lavalink (which can't play
-    // spotify links and would just return "No tracks found.").
+    // A spotify.com link that didn't match the supported-type regex above is a
+    // non-playable resource (user profile, episode, show, …). Reject it clearly
+    // instead of handing it to Lavalink, which would just return nothing.
     if (/spotify\.com/i.test(trimmed)) {
-      console.warn("[RESOLVE INPUT] spotify.com URL did not match the spotify regex:", trimmed);
+      throw new Error(
+        "This Spotify link isn't a track, artist, album, or playlist, so it can't be played."
+      );
     }
     return { tracks: await lavalink.loadTracks(trimmed), source: "youtube", isPlaylist: youtubePlaylistRegex.test(trimmed) };
   }
@@ -45,7 +49,7 @@ export async function resolveInput(lavalink: LavalinkClient, input: string): Pro
 async function resolveSpotifyInput(
   lavalink: LavalinkClient,
   url: string,
-  type: "track" | "album" | "playlist",
+  type: SpotifyType,
   id: string
 ): Promise<ResolvedInput> {
 
@@ -138,21 +142,22 @@ async function metadataFallbackQuery(url: string, service: string) {
 function parseSpotifyUrl(url: string) {
   const match = spotifyUrlRegex.exec(url);
   if (!match) return undefined;
-  return { type: match[1] as "track" | "album" | "playlist", id: match[2] };
+  return { type: match[1] as SpotifyType, id: match[2] };
 }
 
 /**
- * Resolve Spotify tracks/album/playlist via the public embed endpoint.
+ * Resolve Spotify tracks/artist/album/playlist via the public embed endpoint.
  *
  * `https://open.spotify.com/embed/{type}/{id}` returns a Next.js page whose
  * `__NEXT_DATA__` script contains the track list under
  * `props.pageProps.state.data.entity`. This works without any credentials:
  *  - playlist/album -> `entity.trackList[]` ({ title, subtitle, uri })
  *  - track          -> `entity` ({ title, artists[] })
+ *  - artist         -> `entity.trackList[]` (the artist's top tracks)
  *
  * Returns an array of "artist title" search queries suitable for metadata search.
  */
-async function spotifyEmbedQueries(type: "track" | "album" | "playlist", id: string): Promise<string[]> {
+async function spotifyEmbedQueries(type: SpotifyType, id: string): Promise<string[]> {
   try {
     const response = await fetchWithTimeout(
       `https://open.spotify.com/embed/${type}/${encodeURIComponent(id)}`,

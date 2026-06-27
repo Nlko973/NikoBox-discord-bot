@@ -18,6 +18,9 @@ export interface SpotifyTrackQuery {
   durationMs?: number;
 }
 
+/** Spotify resource types we can resolve into playable tracks. */
+export type SpotifyType = "track" | "artist" | "album" | "playlist";
+
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const API_BASE = "https://api.spotify.com/v1";
 
@@ -41,11 +44,11 @@ export class SpotifyClient {
   }
 
   /**
-   * Resolve a track, album, or playlist into a list of search queries.
+   * Resolve a track, artist, album, or playlist into a list of search queries.
    * Returns `undefined` when credentials are missing or the request fails so
    * the caller can fall back to embed scraping.
    */
-  async resolveQueries(type: "track" | "album" | "playlist", id: string): Promise<SpotifyTrackQuery[] | undefined> {
+  async resolveQueries(type: SpotifyType, id: string): Promise<SpotifyTrackQuery[] | undefined> {
     if (!this.isConfigured) return undefined;
     try {
       const token = await this.ensureToken();
@@ -54,6 +57,17 @@ export class SpotifyClient {
       if (type === "track") {
         const track = await this.get<SpotifyApiTrack>(`${API_BASE}/tracks/${id}`, token);
         return [toQuery(track)];
+      }
+
+      if (type === "artist") {
+        // An artist link isn't a track list by itself — use the artist's top
+        // tracks (a single request, market-restricted to a fixed market because
+        // top-tracks are always returned for one market).
+        const top = await this.get<{ tracks?: SpotifyApiTrack[] }>(
+          `${API_BASE}/artists/${id}/top-tracks?market=US`,
+          token
+        );
+        return (top.tracks ?? []).map(toQuery);
       }
 
       if (type === "album") {
